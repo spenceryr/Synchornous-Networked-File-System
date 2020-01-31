@@ -1,0 +1,4 @@
+build-essential
+libcurl3-dev
+libxmlrpc-c++8-dev
+libxmlrpc-c++8v5
