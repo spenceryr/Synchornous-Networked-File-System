@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS=-std=c++14 -ggdb -Wall -Wextra -pedantic -Werror -Wnon-virtual-dtor -Iinclude
 
 SERVER_OBJS=MetadataStore.o
-CLIENT_OBJS=SurfStoreProxy.o
+CLIENT_OBJS=SurfStoreProxy.o MyFileSystem.o
 CLIENT_LIBS=`xmlrpc-c-config c++ libwww-client --libs`
 CLIENT_FLAGS=`xmlrpc-c-config c++ libwww-client --cflags`
 SERVER_LIBS=`xmlrpc-c-config c++2 abyss-server server-util --libs`

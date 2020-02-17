@@ -18,7 +18,7 @@ using namespace std;
 int
 main(int argc, char *argv[]) {
 	auto err_logger = spdlog::stderr_color_mt("stderr");
-	spdlog::set_level(spdlog::level::debug);
+	spdlog::set_level(spdlog::level::off);
 	spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread %t] %v");
 	spdlog::get("stderr")->info("Starting RPC client");
 
@@ -29,35 +29,42 @@ main(int argc, char *argv[]) {
 
 	// You should read in the command line arguments here
 
+	string server_port = argv[1];
+	string base_dir = argv[2];
+	int blocksize = stoi(argv[3]);
+
     // Start up our RPC library.
     XmlRpcClient::Initialize("SurfStoreClient", "0.1");
 
     try {
 		// A hard-coded server, just for testing. You should change
 		// this to the argument provided via the command-line
-		XmlRpcClient server ("http://localhost:8080/RPC2");
+		server_port = "http://" + server_port + "/RPC2";
+		XmlRpcClient server (server_port);
 		SurfStoreProxy ss(server);
+
+		char *real_path = realpath(base_dir.c_str(), NULL);
+		string abs_path (real_path);
+		free(real_path);
         
 		// Test the 'ping' call
 		bool ret1 = ss.ping();
 		spdlog::get("stderr")->info("Ping() successful: {}", ret1);
 
-		// Create a block to use for testing
-		unsigned char block[16];
-		for (unsigned int i = 0; i < 16; i++) {
-			block[i] = i % 16;
-		}
-
-		// Test the putblock call
-		bool ret2 = ss.putblock(XmlRpcValue::makeBase64(block, 16));
-		spdlog::get("stderr")->info("Putblock() successful: {}", ret2);
-
-		// Test the getblock call
-		XmlRpcValue val = ss.getblock("h0");
-		const unsigned char * blockData;
-		size_t blockLength;
-		val.getBase64(blockData, blockLength);
-		spdlog::get("stderr")->info("GetBlock() successfully returned a block of size {}", blockLength);
+		ss.set_base_dir(abs_path);
+		spdlog::get("stderr")->info("Basedir set to: {}", abs_path);
+		ss.set_block_size(blocksize);
+		spdlog::get("stderr")->info("Blocksize set to: {}", blocksize);
+		ss.load_local_files();
+		spdlog::get("stderr")->info("Local files loaded");
+		ss.load_local_index();
+		spdlog::get("stderr")->info("Local index loaded");
+		ss.load_remote_index();
+		spdlog::get("stderr")->info("Remote index loaded");
+		ss.sync();
+		spdlog::get("stderr")->info("Sync complete");
+		ss.build_indextxt();
+		spdlog::get("stderr")->info("Index.txt built");
 
     } catch (XmlRpcFault & e) {
         cerr << "Client threw error code: " << e.getFaultCode() <<  endl;

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <vector>
+#include <map>
 
 using namespace std;
 
@@ -14,6 +15,16 @@ using namespace std;
 #include "spdlog/sinks/stdout_color_sinks.h"
 
 #include "MetadataStore.hpp"
+
+#include "picosha2.h"
+
+map<string, vector<unsigned char>> block_store;
+
+string hash_block(
+    vector<unsigned char> block)
+{
+    return picosha2::hash256_hex_string(block);
+}
 
 // A simple ping. Always returns True
 class PingMethod : public xmlrpc_c::method {
@@ -55,11 +66,9 @@ public:
         paramList.verifyEnd(1);
 
 		spdlog::get("stderr")->info("GetBlock({})", h);
+        spdlog::get("stderr")->info("Block {} is: {}", h, &(block_store.at(h)[0]));
 
-		unsigned char blockData[] = {0x10, 0x11, 0x12, 0x13, 0x14};
-		vector<unsigned char> const block(&blockData[0], &blockData[4]);
-
-        *retvalP = xmlrpc_c::value_bytestring(block);
+        *retvalP = xmlrpc_c::value_bytestring(block_store.at(h));
     }
 
 protected:
@@ -82,7 +91,9 @@ public:
 		vector<unsigned char> const b(paramList.getBytestring(0));
         paramList.verifyEnd(1);
 
-		spdlog::get("stderr")->info("PutBlock()");
+		spdlog::get("stderr")->info("PutBlock({})", &(b[0]));
+
+        block_store[hash_block(b)] = b;
 
         *retvalP = xmlrpc_c::value_boolean(true);
     }
@@ -112,9 +123,9 @@ public:
 		spdlog::get("stderr")->info("HasBlocks()");
 
 		vector<xmlrpc_c::value> blocks;
-		blocks.push_back(xmlrpc_c::value_string("h0"));
-		blocks.push_back(xmlrpc_c::value_string("h1"));
-		blocks.push_back(xmlrpc_c::value_string("h2"));
+        for (auto const &h : hashlist)
+            if ((block_store.count(((xmlrpc_c::value_string)h).cvalue())))
+                blocks.push_back((xmlrpc_c::value_string)h);
 
         *retvalP = xmlrpc_c::value_array(blocks);
     }
@@ -142,19 +153,28 @@ public:
 		spdlog::get("stderr")->info("GetFileInfomap()");
 
 		map<string, xmlrpc_c::value> fileInfoMap;
+        vector<xmlrpc_c::value> finfo;
+        for (auto const &x : m.get_map())
+        {
+            finfo.clear();
+            finfo.push_back(xmlrpc_c::value_int(get<0>(get<1>(x))));
+            for (auto const &s : get<1>(get<1>(x)))
+                finfo.push_back(xmlrpc_c::value_string(s));
+            fileInfoMap.insert(pair<string, xmlrpc_c::value>(get<0>(x), xmlrpc_c::value_array(finfo)));
+        }
 
-		vector<xmlrpc_c::value> f1info;
-		f1info.push_back(xmlrpc_c::value_int(3)); // version
+		// vector<xmlrpc_c::value> f1info;
+		// f1info.push_back(xmlrpc_c::value_int(3)); // version
 
-		vector<xmlrpc_c::value> f1blocks;
-		f1blocks.push_back(xmlrpc_c::value_string("h0"));
-		f1blocks.push_back(xmlrpc_c::value_string("h1"));
-		f1blocks.push_back(xmlrpc_c::value_string("h2"));
+		// vector<xmlrpc_c::value> f1blocks;
+		// f1blocks.push_back(xmlrpc_c::value_string("h0"));
+		// f1blocks.push_back(xmlrpc_c::value_string("h1"));
+		// f1blocks.push_back(xmlrpc_c::value_string("h2"));
 
-		f1info.push_back(xmlrpc_c::value_array(f1blocks));
+		// f1info.push_back(xmlrpc_c::value_array(f1blocks));
 
-		pair<string, xmlrpc_c::value> f1entry("file1.txt", xmlrpc_c::value_array(f1info));
-		fileInfoMap.insert(f1entry);
+		// pair<string, xmlrpc_c::value> f1entry("file1.txt", xmlrpc_c::value_array(f1info));
+		// fileInfoMap.insert(f1entry);
 
         *retvalP = xmlrpc_c::value_struct(fileInfoMap);
     }
@@ -190,12 +210,45 @@ public:
 
 		spdlog::get("stderr")->info("UpdateFile({})", filename);
 
-		(void) version;	// to suppress unused variable warning
-		(void) hashlist;// to suppress unused variable warning
+        vector<string> hashes;
+        for (auto const &h : hashlist)
+            hashes.push_back(((xmlrpc_c::value_string)h).cvalue());
 
 		vector<xmlrpc_c::value> result;
-		result.push_back(xmlrpc_c::value_boolean(true)); // status
-		result.push_back(xmlrpc_c::value_int(3)); // version
+        bool result_bool;
+        int result_int;
+
+        if (!(m.get_map().count(filename)))
+        {
+            if (version == 1)
+            {
+                m.get_map()[filename] = make_tuple(version, hashes);
+                result_bool = true;
+                result_int = version;
+            }
+            else
+            {
+                result_bool = false;
+                result_int = 0;
+            }
+        }
+        else
+        {
+            if (get<0>(m.get_map()[filename]) == version - 1)
+            {
+                m.get_map()[filename] = make_tuple(version, hashes);
+                result_bool = true;
+                result_int = version;
+            }
+            else
+            {
+                result_bool = false;
+                result_int = get<0>(m.get_map()[filename]);
+            }
+        }
+
+		result.push_back(xmlrpc_c::value_boolean(result_bool)); // status
+		result.push_back(xmlrpc_c::value_int(result_int)); // version
 
         *retvalP = xmlrpc_c::value_array(result);
     }
@@ -209,7 +262,7 @@ main(int, char **)
 {
 	MetadataStore m;
 	auto err_logger = spdlog::stderr_color_mt("stderr");
-	spdlog::set_level(spdlog::level::debug);
+	spdlog::set_level(spdlog::level::off);
 	spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread %t] %v");
 
 	spdlog::get("stderr")->info("Starting RPC server");
@@ -238,7 +291,7 @@ main(int, char **)
         xmlrpc_c::serverAbyss myAbyssServer(
             xmlrpc_c::serverAbyss::constrOpt()
             .registryP(&myRegistry)
-            .portNumber(8080));
+            .portNumber(8092));
         
         myAbyssServer.run();
         // xmlrpc_c::serverAbyss.run() never returns

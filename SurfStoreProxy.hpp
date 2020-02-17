@@ -5,9 +5,23 @@
 #define _SurfStoreProxy_HPP_ 1
 
 #include <xmlrpc-c/oldcppwrapper.hpp>
+#include <tuple>
+#include <vector>
+#include <map>
+#include <string>
+
+typedef std::tuple<int, std::vector<std::string>> file_info_t; //<version, array of hashes>
 
 class SurfStoreProxy {
     XmlRpcClient mClient;
+
+    std::string base_dir;
+    int block_size;
+
+    std::map<std::string, std::vector<unsigned char>> local_block_store;
+    std::map<std::string, std::vector<std::string>> local_files;
+    std::map<std::string, file_info_t> local_index;
+    std::map<std::string, file_info_t> remote_index;
 
 public:
     SurfStoreProxy (const XmlRpcClient& client)
@@ -39,6 +53,39 @@ public:
 
     /* Updates the FileInfo entry of the given file */
     XmlRpcValue /*array*/ updatefile (std::string const string1, XmlRpcValue::int32 const int2, XmlRpcValue /*array*/ array3);
+
+    void set_base_dir(
+        std::string dir);
+
+    void set_block_size(
+        int i);
+
+    void load_local_index();
+
+    void load_local_files();
+
+    std::vector<std::string> load_local_blocks(
+        std::string path_string);
+
+    std::string hash_block(
+        std::vector<unsigned char> block);
+
+    void load_remote_index();
+
+    file_info_t redownload_file(
+        std::string filename);
+
+    void update_local_blocks(
+        std::string filename,
+        file_info_t remote_file_data);
+
+    void attempt_push(
+        std::string filename);
+
+    void sync();
+
+    void build_indextxt(
+        bool from_local=false);
 };
 
 #endif /* _SurfStoreProxy_HPP_ */
