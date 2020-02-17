@@ -291,7 +291,7 @@ main(int, char **)
         xmlrpc_c::serverAbyss myAbyssServer(
             xmlrpc_c::serverAbyss::constrOpt()
             .registryP(&myRegistry)
-            .portNumber(8092));
+            .portNumber(8080));
         
         myAbyssServer.run();
         // xmlrpc_c::serverAbyss.run() never returns
